@@ -1,0 +1,7 @@
+# Caddy automatically obtains and renews a free Let's Encrypt TLS certificate
+# for this domain. Requirements: the domain's DNS A record must point at this
+# server's public IP, and ports 80 + 443 must be reachable from the internet.
+hobbyapp.tech {
+	encode gzip
+	reverse_proxy api:8080
+}
