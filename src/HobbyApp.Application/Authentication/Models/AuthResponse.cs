@@ -8,3 +8,11 @@ public sealed record AuthResponse(
     string AccessToken,
     string RefreshToken,
     DateTimeOffset AccessTokenExpiresAt);
+
+/// <summary>
+/// Outcome of a login attempt. When <see cref="RequiresEmailVerification"/> is true,
+/// <see cref="Tokens"/> is null and the client must complete OTP verification first.
+/// </summary>
+public sealed record LoginResult(
+    AuthResponse? Tokens,
+    bool RequiresEmailVerification);

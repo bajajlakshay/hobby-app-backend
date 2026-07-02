@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text;
 using HobbyApp.Application.Authentication;
 using HobbyApp.Application.Authentication.Models;
+using HobbyApp.Application.Common.Interfaces;
 using HobbyApp.Application.Common.Models;
 using HobbyApp.Infrastructure.Authentication;
 using HobbyApp.Infrastructure.Persistence;
@@ -13,16 +16,21 @@ internal sealed class IdentityService(
     UserManager<ApplicationUser> userManager,
     ApplicationDbContext context,
     JwtTokenGenerator tokenGenerator,
+    IEmailSender emailSender,
     IOptions<JwtSettings> jwtOptions) : IIdentityService
 {
+    private const int OtpLength = 6;
+    private static readonly TimeSpan OtpLifetime = TimeSpan.FromMinutes(10);
+    private const int MaxOtpAttempts = 5;
+
     private readonly JwtSettings _settings = jwtOptions.Value;
 
-    public async Task<Result<AuthResponse>> RegisterAsync(
+    public async Task<Result<bool>> RegisterAsync(
         RegisterRequest request, CancellationToken cancellationToken = default)
     {
         if (await userManager.FindByEmailAsync(request.Email) is not null)
         {
-            return Result<AuthResponse>.Failure("A user with this email already exists.");
+            return Result<bool>.Failure("A user with this email already exists.");
         }
 
         var user = new ApplicationUser
@@ -34,22 +42,90 @@ internal sealed class IdentityService(
         var result = await userManager.CreateAsync(user, request.Password);
         if (!result.Succeeded)
         {
-            return Result<AuthResponse>.Failure(result.Errors.Select(e => e.Description));
+            return Result<bool>.Failure(result.Errors.Select(e => e.Description));
         }
+
+        await GenerateAndSendOtpAsync(user, cancellationToken);
+        return Result<bool>.Success(true);
+    }
+
+    public async Task<Result<AuthResponse>> VerifyEmailAsync(
+        VerifyEmailRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+        {
+            return Result<AuthResponse>.Failure("Invalid or expired code.");
+        }
+
+        if (user.EmailConfirmed)
+        {
+            return Result<AuthResponse>.Failure("Email is already verified. Please sign in.");
+        }
+
+        if (user.EmailOtpHash is null || user.EmailOtpExpiresAt is null ||
+            user.EmailOtpExpiresAt < DateTimeOffset.UtcNow)
+        {
+            return Result<AuthResponse>.Failure("Your code has expired. Please request a new one.");
+        }
+
+        if (user.EmailOtpAttempts >= MaxOtpAttempts)
+        {
+            return Result<AuthResponse>.Failure("Too many attempts. Please request a new code.");
+        }
+
+        if (!CodeMatches(request.Code, user.EmailOtpHash))
+        {
+            user.EmailOtpAttempts++;
+            await userManager.UpdateAsync(user);
+            return Result<AuthResponse>.Failure("Invalid code.");
+        }
+
+        // Success: confirm the email and clear the outstanding OTP.
+        user.EmailConfirmed = true;
+        user.EmailOtpHash = null;
+        user.EmailOtpExpiresAt = null;
+        user.EmailOtpAttempts = 0;
+        await userManager.UpdateAsync(user);
 
         return Result<AuthResponse>.Success(await IssueTokensAsync(user, cancellationToken));
     }
 
-    public async Task<Result<AuthResponse>> LoginAsync(
+    public async Task<Result<bool>> ResendOtpAsync(
+        ResendOtpRequest request, CancellationToken cancellationToken = default)
+    {
+        var user = await userManager.FindByEmailAsync(request.Email);
+        if (user is null)
+        {
+            return Result<bool>.Failure("No account found for this email.");
+        }
+
+        if (user.EmailConfirmed)
+        {
+            return Result<bool>.Failure("Email is already verified. Please sign in.");
+        }
+
+        await GenerateAndSendOtpAsync(user, cancellationToken);
+        return Result<bool>.Success(true);
+    }
+
+    public async Task<Result<LoginResult>> LoginAsync(
         LoginRequest request, CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
         if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
         {
-            return Result<AuthResponse>.Failure("Invalid email or password.");
+            return Result<LoginResult>.Failure("Invalid email or password.");
         }
 
-        return Result<AuthResponse>.Success(await IssueTokensAsync(user, cancellationToken));
+        if (!user.EmailConfirmed)
+        {
+            // Credentials are valid but the account isn't verified yet.
+            return Result<LoginResult>.Success(new LoginResult(null, RequiresEmailVerification: true));
+        }
+
+        var tokens = await IssueTokensAsync(user, cancellationToken);
+        return Result<LoginResult>.Success(new LoginResult(tokens, RequiresEmailVerification: false));
     }
 
     public async Task<Result<AuthResponse>> RefreshTokenAsync(
@@ -90,6 +166,21 @@ internal sealed class IdentityService(
         return Result<bool>.Success(true);
     }
 
+    private async Task GenerateAndSendOtpAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
+        var code = GenerateOtp();
+        user.EmailOtpHash = HashOtp(code);
+        user.EmailOtpExpiresAt = DateTimeOffset.UtcNow.Add(OtpLifetime);
+        user.EmailOtpAttempts = 0;
+        await userManager.UpdateAsync(user);
+
+        await emailSender.SendAsync(
+            user.Email!,
+            "Your HobbyApp verification code",
+            BuildOtpEmail(code),
+            cancellationToken);
+    }
+
     private async Task<AuthResponse> IssueTokensAsync(ApplicationUser user, CancellationToken cancellationToken)
     {
         var (accessToken, expiresAt) = tokenGenerator.GenerateAccessToken(user);
@@ -107,4 +198,31 @@ internal sealed class IdentityService(
 
         return new AuthResponse(accessToken, refreshToken.Token, expiresAt);
     }
+
+    private static string GenerateOtp()
+    {
+        // Cryptographically strong 6-digit code (000000-999999).
+        var value = RandomNumberGenerator.GetInt32(0, 1_000_000);
+        return value.ToString($"D{OtpLength}");
+    }
+
+    private static string HashOtp(string code) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code)));
+
+    private static bool CodeMatches(string code, string expectedHash)
+    {
+        var actual = Encoding.UTF8.GetBytes(HashOtp(code));
+        var expected = Encoding.UTF8.GetBytes(expectedHash);
+        return CryptographicOperations.FixedTimeEquals(actual, expected);
+    }
+
+    private static string BuildOtpEmail(string code) =>
+        $"""
+        <div style="font-family:sans-serif;max-width:480px;margin:auto">
+          <h2>Verify your email</h2>
+          <p>Use this code to finish setting up your HobbyApp account:</p>
+          <p style="font-size:32px;font-weight:bold;letter-spacing:6px">{code}</p>
+          <p>This code expires in 10 minutes. If you didn't request it, you can ignore this email.</p>
+        </div>
+        """;
 }

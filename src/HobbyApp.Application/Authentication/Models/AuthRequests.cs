@@ -12,3 +12,10 @@ public sealed record LoginRequest(
 
 public sealed record RefreshTokenRequest(
     [Required] string RefreshToken);
+
+public sealed record VerifyEmailRequest(
+    [Required, EmailAddress] string Email,
+    [Required, StringLength(6, MinimumLength = 6)] string Code);
+
+public sealed record ResendOtpRequest(
+    [Required, EmailAddress] string Email);

@@ -2,6 +2,7 @@ using System.Text;
 using HobbyApp.Application.Authentication;
 using HobbyApp.Application.Common.Interfaces;
 using HobbyApp.Infrastructure.Authentication;
+using HobbyApp.Infrastructure.Email;
 using HobbyApp.Infrastructure.Identity;
 using HobbyApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -31,6 +32,9 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(
             provider => provider.GetRequiredService<ApplicationDbContext>());
+
+        services.Configure<EmailSettings>(configuration.GetSection(EmailSettings.SectionName));
+        services.AddScoped<IEmailSender, EmailSender>();
 
         AddIdentityAndAuth(services, configuration);
 
