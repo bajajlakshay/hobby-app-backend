@@ -7,6 +7,9 @@ namespace HobbyApp.Application.Notes;
 
 internal sealed class NoteService(IApplicationDbContext context, ICurrentUser currentUser) : INoteService
 {
+    /// <summary>Trashed notes older than this are permanently deleted.</summary>
+    private static readonly TimeSpan TrashRetention = TimeSpan.FromDays(30);
+
     private Guid UserId =>
         currentUser.UserId ?? throw new UnauthorizedAccessException("No authenticated user.");
 
@@ -14,6 +17,22 @@ internal sealed class NoteService(IApplicationDbContext context, ICurrentUser cu
         NoteQuery query, CancellationToken cancellationToken = default)
     {
         var userId = UserId;
+
+        if (query.View == NoteView.Trash)
+        {
+            // Lazy purge: listing the trash is the natural moment to expire it
+            // (clients pull this view on every sync, so it runs regularly).
+            var cutoff = DateTimeOffset.UtcNow - TrashRetention;
+            var expired = await context.Notes
+                .Where(n => n.UserId == userId && n.DeletedAt != null && n.DeletedAt < cutoff)
+                .ToListAsync(cancellationToken);
+            if (expired.Count > 0)
+            {
+                context.Notes.RemoveRange(expired);
+                await context.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         var notes = context.Notes.AsNoTracking().Where(n => n.UserId == userId);
 
         notes = query.View switch

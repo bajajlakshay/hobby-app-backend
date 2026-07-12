@@ -1,9 +1,11 @@
+using System.Threading.RateLimiting;
 using HobbyApp.Api.Services;
 using HobbyApp.Application;
 using HobbyApp.Application.Common.Interfaces;
 using HobbyApp.Infrastructure;
 using HobbyApp.Infrastructure.Persistence;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +22,46 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // Exposes the authenticated user's claims to the application layer.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
+// The API is consumed from browsers when the app runs as a web build. Auth is
+// bearer-token based (no cookies), so a permissive CORS policy is safe here.
+builder.Services.AddCors(options =>
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+
+// Per-IP rate limits on the auth endpoints (behind Caddy the client IP comes
+// from X-Forwarded-For, applied by UseForwardedHeaders before this runs).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync(
+            """{"errors":["Too many requests. Please wait a moment and try again."]}""",
+            cancellationToken);
+    };
+
+    // General credential endpoints: login, register, verify, refresh.
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+
+    // Endpoints that send email — much stricter to prevent inbox flooding.
+    options.AddPolicy("otp", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromMinutes(5),
+            }));
+});
 
 var app = builder.Build();
 
@@ -52,6 +94,9 @@ else
     forwardedOptions.KnownProxies.Clear();
     app.UseForwardedHeaders(forwardedOptions);
 }
+
+app.UseCors();
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

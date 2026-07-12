@@ -22,6 +22,9 @@ internal sealed class IdentityService(
     private const int OtpLength = 6;
     private static readonly TimeSpan OtpLifetime = TimeSpan.FromMinutes(10);
     private const int MaxOtpAttempts = 5;
+    private static readonly TimeSpan OtpResendCooldown = TimeSpan.FromSeconds(60);
+    /// <summary>How long expired/rotated refresh tokens are kept before purging.</summary>
+    private static readonly TimeSpan RefreshTokenRetention = TimeSpan.FromDays(30);
 
     private readonly JwtSettings _settings = jwtOptions.Value;
 
@@ -105,6 +108,17 @@ internal sealed class IdentityService(
             return Result<bool>.Failure("Email is already verified. Please sign in.");
         }
 
+        // Cooldown between sends, so the endpoint can't be used to flood an inbox.
+        if (user.EmailOtpExpiresAt is { } expiresAt)
+        {
+            var lastSentAt = expiresAt - OtpLifetime;
+            if (DateTimeOffset.UtcNow - lastSentAt < OtpResendCooldown)
+            {
+                return Result<bool>.Failure(
+                    "A code was just sent. Please wait a minute before requesting another.");
+            }
+        }
+
         await GenerateAndSendOtpAsync(user, cancellationToken);
         return Result<bool>.Success(true);
     }
@@ -113,10 +127,25 @@ internal sealed class IdentityService(
         LoginRequest request, CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByEmailAsync(request.Email);
-        if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+        if (user is null)
         {
             return Result<LoginResult>.Failure("Invalid email or password.");
         }
+
+        if (await userManager.IsLockedOutAsync(user))
+        {
+            return Result<LoginResult>.Failure(
+                "Too many failed attempts. Please try again in a few minutes.");
+        }
+
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+        {
+            // Counts toward the lockout threshold configured in DI.
+            await userManager.AccessFailedAsync(user);
+            return Result<LoginResult>.Failure("Invalid email or password.");
+        }
+
+        await userManager.ResetAccessFailedCountAsync(user);
 
         if (!user.EmailConfirmed)
         {
@@ -134,8 +163,23 @@ internal sealed class IdentityService(
         var stored = await context.RefreshTokens
             .SingleOrDefaultAsync(rt => rt.Token == request.RefreshToken, cancellationToken);
 
-        if (stored is null || !stored.IsActive)
+        if (stored is null)
         {
+            return Result<AuthResponse>.Failure("Invalid or expired refresh token.");
+        }
+
+        if (!stored.IsActive)
+        {
+            if (stored.RevokedAt is not null)
+            {
+                // Reuse of a rotated token: either the token was stolen or a
+                // client retried after a lost response. Revoke every active
+                // token for the user so a possible thief is cut off too.
+                var now = DateTimeOffset.UtcNow;
+                await context.RefreshTokens
+                    .Where(rt => rt.UserId == stored.UserId && rt.RevokedAt == null && rt.ExpiresAt > now)
+                    .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.RevokedAt, now), cancellationToken);
+            }
             return Result<AuthResponse>.Failure("Invalid or expired refresh token.");
         }
 
@@ -144,6 +188,12 @@ internal sealed class IdentityService(
         {
             return Result<AuthResponse>.Failure("User no longer exists.");
         }
+
+        // Opportunistic cleanup: the audit trail doesn't need tokens this stale.
+        var purgeBefore = DateTimeOffset.UtcNow - RefreshTokenRetention;
+        await context.RefreshTokens
+            .Where(rt => rt.UserId == stored.UserId && rt.ExpiresAt < purgeBefore)
+            .ExecuteDeleteAsync(cancellationToken);
 
         // Rotate: revoke the presented token and issue a fresh pair atomically.
         stored.RevokedAt = DateTimeOffset.UtcNow;

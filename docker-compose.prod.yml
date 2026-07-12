@@ -11,7 +11,10 @@ services:
       - hobbyapp-pgdata:/var/lib/postgresql/data
     networks:
       - hobbyapp
-    # No published ports: Postgres is reachable only from the internal network.
+    # Bind to the VPS loopback ONLY (127.0.0.1) so Postgres is reachable via an
+    # SSH tunnel for admin tools (pgAdmin), but never exposed to the internet.
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s

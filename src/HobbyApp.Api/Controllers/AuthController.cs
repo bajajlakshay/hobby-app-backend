@@ -3,14 +3,17 @@ using HobbyApp.Application.Authentication.Models;
 using HobbyApp.Application.Common.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HobbyApp.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[EnableRateLimiting("auth")]
 public class AuthController(IIdentityService identityService) : ControllerBase
 {
     [HttpPost("register")]
+    [EnableRateLimiting("otp")]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken cancellationToken)
     {
         var result = await identityService.RegisterAsync(request, cancellationToken);
@@ -29,6 +32,7 @@ public class AuthController(IIdentityService identityService) : ControllerBase
     }
 
     [HttpPost("resend-otp")]
+    [EnableRateLimiting("otp")]
     public async Task<IActionResult> ResendOtp(ResendOtpRequest request, CancellationToken cancellationToken)
     {
         var result = await identityService.ResendOtpAsync(request, cancellationToken);
