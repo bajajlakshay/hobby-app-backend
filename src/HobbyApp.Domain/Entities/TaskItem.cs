@@ -13,4 +13,6 @@ public class TaskItem : BaseAuditableEntity
     public string Title { get; set; } = string.Empty;
 
     public List<ChecklistItem> Items { get; set; } = [];
+
+    public DateTimeOffset? ReminderAt { get; set; }
 }

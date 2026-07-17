@@ -44,6 +44,7 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
             Title = request.Title?.Trim() ?? string.Empty,
             Items = MapItems(request.Items),
             CreatedAt = DateTimeOffset.UtcNow,
+            ReminderAt = request.ReminderAt,
         };
 
         context.Tasks.Add(task);
@@ -63,6 +64,7 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
         task.Title = request.Title?.Trim() ?? string.Empty;
         task.Items = MapItems(request.Items);
         task.UpdatedAt = DateTimeOffset.UtcNow;
+        task.ReminderAt = request.ReminderAt;
         await context.SaveChangesAsync(cancellationToken);
         return TaskDto.FromEntity(task);
     }

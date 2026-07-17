@@ -11,7 +11,8 @@ public sealed record TaskDto(
     int CompletedCount,
     int TotalCount,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt)
+    DateTimeOffset? UpdatedAt,
+    DateTimeOffset? ReminderAt)
 {
     public static TaskDto FromEntity(TaskItem task)
     {
@@ -26,6 +27,7 @@ public sealed record TaskDto(
             items.Count(i => i.IsCompleted),
             items.Count,
             task.CreatedAt,
-            task.UpdatedAt);
+            task.UpdatedAt,
+            task.ReminderAt);
     }
 }

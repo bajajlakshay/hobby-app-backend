@@ -9,8 +9,10 @@ public sealed record ChecklistItemInput(
 
 public sealed record CreateTaskRequest(
     [MaxLength(512)] string? Title,
-    IReadOnlyList<ChecklistItemInput>? Items);
+    IReadOnlyList<ChecklistItemInput>? Items,
+    DateTimeOffset? ReminderAt);
 
 public sealed record UpdateTaskRequest(
     [MaxLength(512)] string? Title,
-    IReadOnlyList<ChecklistItemInput>? Items);
+    IReadOnlyList<ChecklistItemInput>? Items,
+    DateTimeOffset? ReminderAt);
