@@ -19,10 +19,10 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
         switch (query.View)
         {
             case TaskView.Active:
-                tasks = tasks.Where(t => t.DeletedAt == null && !t.IsCompleted);
+                tasks = tasks.Where(t => t.DeletedAt == null && !t.IsCompleted && !(t.Items.Count > 0 && t.Items.All(i => i.IsCompleted)));
                 break;
             case TaskView.Completed:
-                tasks = tasks.Where(t => t.DeletedAt == null && t.IsCompleted);
+                tasks = tasks.Where(t => t.DeletedAt == null && (t.IsCompleted || (t.Items.Count > 0 && t.Items.All(i => i.IsCompleted))));
                 break;
             case TaskView.Trash:
                 tasks = tasks.Where(t => t.DeletedAt != null);
@@ -51,14 +51,15 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
     public async Task<TaskDto> CreateTaskAsync(
         CreateTaskRequest request, CancellationToken cancellationToken = default)
     {
+        var items = MapItems(request.Items);
         var task = new TaskItem
         {
             UserId = UserId,
             Title = request.Title?.Trim() ?? string.Empty,
-            Items = MapItems(request.Items),
+            Items = items,
             CreatedAt = DateTimeOffset.UtcNow,
             ReminderAt = request.ReminderAt,
-            IsCompleted = request.IsCompleted ?? false,
+            IsCompleted = request.IsCompleted ?? (items.Count > 0 && items.All(i => i.IsCompleted)),
         };
 
         context.Tasks.Add(task);
@@ -82,6 +83,10 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
         if (request.IsCompleted.HasValue)
         {
             task.IsCompleted = request.IsCompleted.Value;
+        }
+        else if (task.Items.Count > 0)
+        {
+            task.IsCompleted = task.Items.All(i => i.IsCompleted);
         }
         await context.SaveChangesAsync(cancellationToken);
         return TaskDto.FromEntity(task);
