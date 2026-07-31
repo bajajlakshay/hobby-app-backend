@@ -11,14 +11,27 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
         currentUser.UserId ?? throw new UnauthorizedAccessException("No authenticated user.");
 
     public async Task<IReadOnlyList<TaskDto>> GetTasksAsync(
-        string? search = null, CancellationToken cancellationToken = default)
+        TaskQuery query, CancellationToken cancellationToken = default)
     {
         var userId = UserId;
         var tasks = context.Tasks.AsNoTracking().Where(t => t.UserId == userId);
 
-        if (!string.IsNullOrWhiteSpace(search))
+        switch (query.View)
         {
-            var term = search.Trim().ToLower();
+            case TaskView.Active:
+                tasks = tasks.Where(t => t.DeletedAt == null && !t.IsCompleted);
+                break;
+            case TaskView.Completed:
+                tasks = tasks.Where(t => t.DeletedAt == null && t.IsCompleted);
+                break;
+            case TaskView.Trash:
+                tasks = tasks.Where(t => t.DeletedAt != null);
+                break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
             tasks = tasks.Where(t => t.Title.ToLower().Contains(term));
         }
 
@@ -45,6 +58,7 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
             Items = MapItems(request.Items),
             CreatedAt = DateTimeOffset.UtcNow,
             ReminderAt = request.ReminderAt,
+            IsCompleted = request.IsCompleted ?? false,
         };
 
         context.Tasks.Add(task);
@@ -65,6 +79,53 @@ internal sealed class TaskService(IApplicationDbContext context, ICurrentUser cu
         task.Items = MapItems(request.Items);
         task.UpdatedAt = DateTimeOffset.UtcNow;
         task.ReminderAt = request.ReminderAt;
+        if (request.IsCompleted.HasValue)
+        {
+            task.IsCompleted = request.IsCompleted.Value;
+        }
+        await context.SaveChangesAsync(cancellationToken);
+        return TaskDto.FromEntity(task);
+    }
+
+    public async Task<TaskDto?> SetCompletedAsync(
+        Guid id, bool isCompleted, CancellationToken cancellationToken = default)
+    {
+        var task = await FindAsync(id, cancellationToken);
+        if (task is null)
+        {
+            return null;
+        }
+
+        task.IsCompleted = isCompleted;
+        task.UpdatedAt = DateTimeOffset.UtcNow;
+        await context.SaveChangesAsync(cancellationToken);
+        return TaskDto.FromEntity(task);
+    }
+
+    public async Task<bool> TrashAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var task = await FindAsync(id, cancellationToken);
+        if (task is null)
+        {
+            return false;
+        }
+
+        task.DeletedAt = DateTimeOffset.UtcNow;
+        task.UpdatedAt = DateTimeOffset.UtcNow;
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<TaskDto?> RestoreAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var task = await FindAsync(id, cancellationToken);
+        if (task is null)
+        {
+            return null;
+        }
+
+        task.DeletedAt = null;
+        task.UpdatedAt = DateTimeOffset.UtcNow;
         await context.SaveChangesAsync(cancellationToken);
         return TaskDto.FromEntity(task);
     }

@@ -10,9 +10,20 @@ public sealed record ChecklistItemInput(
 public sealed record CreateTaskRequest(
     [MaxLength(512)] string? Title,
     IReadOnlyList<ChecklistItemInput>? Items,
-    DateTimeOffset? ReminderAt);
+    DateTimeOffset? ReminderAt,
+    bool? IsCompleted);
 
 public sealed record UpdateTaskRequest(
     [MaxLength(512)] string? Title,
     IReadOnlyList<ChecklistItemInput>? Items,
-    DateTimeOffset? ReminderAt);
+    DateTimeOffset? ReminderAt,
+    bool? IsCompleted);
+
+public enum TaskView
+{
+    Active,
+    Completed,
+    Trash,
+}
+
+public sealed record TaskQuery(TaskView View = TaskView.Active, string? Search = null);

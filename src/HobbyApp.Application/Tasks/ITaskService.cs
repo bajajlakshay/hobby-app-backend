@@ -9,13 +9,19 @@ namespace HobbyApp.Application.Tasks;
 /// </summary>
 public interface ITaskService
 {
-    Task<IReadOnlyList<TaskDto>> GetTasksAsync(string? search = null, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskDto>> GetTasksAsync(TaskQuery query, CancellationToken cancellationToken = default);
 
     Task<TaskDto?> GetTaskAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<TaskDto> CreateTaskAsync(CreateTaskRequest request, CancellationToken cancellationToken = default);
 
     Task<TaskDto?> UpdateTaskAsync(Guid id, UpdateTaskRequest request, CancellationToken cancellationToken = default);
+
+    Task<TaskDto?> SetCompletedAsync(Guid id, bool isCompleted, CancellationToken cancellationToken = default);
+
+    Task<bool> TrashAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<TaskDto?> RestoreAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<bool> DeleteTaskAsync(Guid id, CancellationToken cancellationToken = default);
 }

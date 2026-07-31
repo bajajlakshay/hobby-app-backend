@@ -10,6 +10,8 @@ public sealed record TaskDto(
     IReadOnlyList<ChecklistItemDto> Items,
     int CompletedCount,
     int TotalCount,
+    bool IsCompleted,
+    DateTimeOffset? DeletedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     DateTimeOffset? ReminderAt)
@@ -26,6 +28,8 @@ public sealed record TaskDto(
             items,
             items.Count(i => i.IsCompleted),
             items.Count,
+            task.IsCompleted,
+            task.DeletedAt,
             task.CreatedAt,
             task.UpdatedAt,
             task.ReminderAt);

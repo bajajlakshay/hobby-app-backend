@@ -15,4 +15,8 @@ public class TaskItem : BaseAuditableEntity
     public List<ChecklistItem> Items { get; set; } = [];
 
     public DateTimeOffset? ReminderAt { get; set; }
+
+    public bool IsCompleted { get; set; }
+
+    public DateTimeOffset? DeletedAt { get; set; }
 }
