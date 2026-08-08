@@ -12,7 +12,10 @@ public sealed record AuthResponse(
 /// <summary>
 /// Outcome of a login attempt. When <see cref="RequiresEmailVerification"/> is true,
 /// <see cref="Tokens"/> is null and the client must complete OTP verification first.
+/// <see cref="Email"/> carries the account's email address so the client can route
+/// to verification even when the user signed in with a username.
 /// </summary>
 public sealed record LoginResult(
     AuthResponse? Tokens,
-    bool RequiresEmailVerification);
+    bool RequiresEmailVerification,
+    string? Email = null);

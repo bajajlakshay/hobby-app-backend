@@ -36,10 +36,15 @@ internal sealed class IdentityService(
             return Result<bool>.Failure("A user with this email already exists.");
         }
 
+        if (await userManager.FindByNameAsync(request.Username) is not null)
+        {
+            return Result<bool>.Failure("A user with this username already exists.");
+        }
+
         var user = new ApplicationUser
         {
             Email = request.Email,
-            UserName = request.Email,
+            UserName = request.Username,
         };
 
         var result = await userManager.CreateAsync(user, request.Password);
@@ -126,10 +131,10 @@ internal sealed class IdentityService(
     public async Task<Result<LoginResult>> LoginAsync(
         LoginRequest request, CancellationToken cancellationToken = default)
     {
-        var user = await userManager.FindByEmailAsync(request.Email);
+        var user = await FindUserByIdentifierAsync(request.Identifier);
         if (user is null)
         {
-            return Result<LoginResult>.Failure("Invalid email or password.");
+            return Result<LoginResult>.Failure("Invalid email/username or password.");
         }
 
         if (await userManager.IsLockedOutAsync(user))
@@ -142,7 +147,7 @@ internal sealed class IdentityService(
         {
             // Counts toward the lockout threshold configured in DI.
             await userManager.AccessFailedAsync(user);
-            return Result<LoginResult>.Failure("Invalid email or password.");
+            return Result<LoginResult>.Failure("Invalid email/username or password.");
         }
 
         await userManager.ResetAccessFailedCountAsync(user);
@@ -150,11 +155,48 @@ internal sealed class IdentityService(
         if (!user.EmailConfirmed)
         {
             // Credentials are valid but the account isn't verified yet.
-            return Result<LoginResult>.Success(new LoginResult(null, RequiresEmailVerification: true));
+            return Result<LoginResult>.Success(
+                new LoginResult(null, RequiresEmailVerification: true, user.Email));
         }
 
         var tokens = await IssueTokensAsync(user, cancellationToken);
-        return Result<LoginResult>.Success(new LoginResult(tokens, RequiresEmailVerification: false));
+        return Result<LoginResult>.Success(
+            new LoginResult(tokens, RequiresEmailVerification: false, user.Email));
+    }
+
+    /// <summary>
+    /// Resolves a login identifier to a user. Email-shaped identifiers are tried
+    /// against the email index first; everything else against the username index.
+    /// Falls back to the other lookup so legacy accounts (UserName == Email) and
+    /// email-shaped usernames keep working.
+    /// </summary>
+    private async Task<ApplicationUser?> FindUserByIdentifierAsync(string identifier)
+    {
+        identifier = identifier.Trim();
+
+        if (identifier.Contains('@'))
+        {
+            var byEmail = await userManager.FindByEmailAsync(identifier);
+            if (byEmail is not null)
+            {
+                return byEmail;
+            }
+        }
+
+        var byName = await userManager.FindByNameAsync(identifier);
+        if (byName is not null)
+        {
+            return byName;
+        }
+
+        // The identifier didn't match via its "natural" index; try the other one
+        // in case a username happens to look like an email (or vice versa).
+        if (!identifier.Contains('@'))
+        {
+            return await userManager.FindByEmailAsync(identifier);
+        }
+
+        return null;
     }
 
     public async Task<Result<AuthResponse>> RefreshTokenAsync(

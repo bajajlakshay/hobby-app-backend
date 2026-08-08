@@ -54,8 +54,10 @@ public class AuthController(IIdentityService identityService) : ControllerBase
         {
             // Valid credentials, but the email isn't verified — tell the client to
             // route to OTP verification (403 distinguishes this from bad credentials).
+            // The email comes from the account itself so it works even when the
+            // user signed in with a username.
             return StatusCode(StatusCodes.Status403Forbidden,
-                new { requiresVerification = true, email = request.Email });
+                new { requiresVerification = true, email = result.Value.Email });
         }
 
         return Ok(result.Value.Tokens);
