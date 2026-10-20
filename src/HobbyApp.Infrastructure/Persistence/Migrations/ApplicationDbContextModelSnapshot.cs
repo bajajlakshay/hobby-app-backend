@@ -106,6 +106,78 @@ namespace HobbyApp.Infrastructure.Persistence.Migrations
                     b.ToTable("Tasks");
                 });
 
+            modelBuilder.Entity("HobbyApp.Domain.Entities.Tracker", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("Color")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DaysPerWeek")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("Target")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "IsArchived");
+
+                    b.ToTable("Trackers");
+                });
+
+            modelBuilder.Entity("HobbyApp.Domain.Entities.TrackerEntry", b =>
+                {
+                    b.Property<Guid>("TrackerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("integer");
+
+                    b.HasKey("TrackerId", "Day");
+
+                    b.HasIndex("UserId", "Day");
+
+                    b.ToTable("TrackerEntries");
+                });
+
             modelBuilder.Entity("HobbyApp.Infrastructure.Identity.ApplicationUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -389,6 +461,32 @@ namespace HobbyApp.Infrastructure.Persistence.Migrations
                     b.Navigation("Items");
                 });
 
+            modelBuilder.Entity("HobbyApp.Domain.Entities.Tracker", b =>
+                {
+                    b.HasOne("HobbyApp.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("HobbyApp.Domain.Entities.TrackerEntry", b =>
+                {
+                    b.HasOne("HobbyApp.Domain.Entities.Tracker", "Tracker")
+                        .WithMany("Entries")
+                        .HasForeignKey("TrackerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HobbyApp.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tracker");
+                });
+
             modelBuilder.Entity("HobbyApp.Infrastructure.Identity.RefreshToken", b =>
                 {
                     b.HasOne("HobbyApp.Infrastructure.Identity.ApplicationUser", null)
@@ -447,6 +545,11 @@ namespace HobbyApp.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("HobbyApp.Domain.Entities.Tracker", b =>
+                {
+                    b.Navigation("Entries");
                 });
 #pragma warning restore 612, 618
         }

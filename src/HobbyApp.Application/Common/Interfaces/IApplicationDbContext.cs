@@ -13,5 +13,9 @@ public interface IApplicationDbContext
 
     DbSet<TaskItem> Tasks { get; }
 
+    DbSet<Tracker> Trackers { get; }
+
+    DbSet<TrackerEntry> TrackerEntries { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -1,5 +1,6 @@
 using HobbyApp.Application.Notes;
 using HobbyApp.Application.Tasks;
+using HobbyApp.Application.Trackers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HobbyApp.Application;
@@ -13,6 +14,7 @@ public static class DependencyInjection
     {
         services.AddScoped<INoteService, NoteService>();
         services.AddScoped<ITaskService, TaskService>();
+        services.AddScoped<ITrackerService, TrackerService>();
         return services;
     }
 }

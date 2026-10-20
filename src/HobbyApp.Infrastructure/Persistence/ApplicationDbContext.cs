@@ -17,6 +17,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
     public DbSet<TaskItem> Tasks => Set<TaskItem>();
 
+    public DbSet<Tracker> Trackers => Set<Tracker>();
+
+    public DbSet<TrackerEntry> TrackerEntries => Set<TrackerEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Configures the Identity schema first; must run before our own configs.
